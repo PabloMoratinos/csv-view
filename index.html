@@ -123,6 +123,19 @@ body {
 .stat-chip .label { color: var(--text-secondary); font-size: .75rem; text-transform: uppercase; letter-spacing: .5px; }
 .stat-chip .value { font-size: 1.25rem; font-weight: 700; }
 
+.stats-legend {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: .8rem;
+  color: var(--text-secondary);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 4px 24px;
+}
+.stats-legend span { color: var(--text); font-weight: 600; }
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -268,6 +281,14 @@ tbody tr:hover { background: #f8fafc; }
     <div class="section" id="summarySection">
       <div class="section-title">Data Summary</div>
       <div class="stats-overview" id="statsOverview"></div>
+      <div class="stats-legend">
+        <div><span>Min</span> — Minimum value in the column</div>
+        <div><span>Max</span> — Maximum value in the column</div>
+        <div><span>Mean</span> — Average of all numeric values</div>
+        <div><span>Median</span> — Middle value when sorted</div>
+        <div><span>Unique</span> — Number of distinct non-null values</div>
+        <div><span>Nulls</span> — Number of empty or missing values</div>
+      </div>
       <div class="stats-grid" id="statsGrid"></div>
     </div>
 
@@ -467,11 +488,40 @@ function sortData() {
   });
 }
 
+function heatmapColor(t) {
+  // t: 0 (low/blue) → 0.25 (green) → 0.5 (yellow) → 0.75 (orange) → 1 (red), pastel
+  const stops = [
+    [0,    173, 216, 230],  // pastel blue
+    [0.25, 176, 226, 176],  // pastel green
+    [0.5,  255, 255, 180],  // pastel yellow
+    [0.75, 255, 210, 160],  // pastel orange
+    [1,    255, 180, 180]   // pastel red
+  ];
+  let lo = stops[0], hi = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (t >= stops[i][0] && t <= stops[i + 1][0]) { lo = stops[i]; hi = stops[i + 1]; break; }
+  }
+  const f = lo[0] === hi[0] ? 0 : (t - lo[0]) / (hi[0] - lo[0]);
+  const r = Math.round(lo[1] + f * (hi[1] - lo[1]));
+  const g = Math.round(lo[2] + f * (hi[2] - lo[2]));
+  const b = Math.round(lo[3] + f * (hi[3] - lo[3]));
+  return `rgb(${r},${g},${b})`;
+}
+
 function renderTable() {
   const { headers, filtered, page } = state;
   const pageSize = parseInt(document.getElementById('pageSize').value);
   const start = page * pageSize;
   const pageRows = filtered.slice(start, start + pageSize);
+
+  // Pre-compute min/max per column for heatmap
+  const colRange = headers.map((_, i) => {
+    const nums = filtered.map(r => Number(r[i])).filter(n => !isNaN(n));
+    if (nums.length === 0) return null;
+    const min = Math.min(...nums);
+    const max = Math.max(...nums);
+    return min === max ? null : { min, max };
+  });
 
   // Head
   const thead = document.querySelector('#dataTable thead');
@@ -528,8 +578,17 @@ function renderTable() {
     const tr = document.createElement('tr');
     headers.forEach((_, i) => {
       const td = document.createElement('td');
-      td.textContent = row[i] ?? '';
-      td.title = row[i] ?? '';
+      const val = row[i] ?? '';
+      td.textContent = val;
+      td.title = val;
+      const range = colRange[i];
+      if (range) {
+        const n = Number(val);
+        if (!isNaN(n)) {
+          const t = (n - range.min) / (range.max - range.min);
+          td.style.backgroundColor = heatmapColor(t);
+        }
+      }
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
