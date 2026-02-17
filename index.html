@@ -64,6 +64,7 @@ body {
 .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
 .drop-zone p { color: var(--text-secondary); margin-bottom: 12px; font-size: 1rem; }
 .drop-zone .btn { display: inline-block; }
+.drop-zone-divider { color: var(--text-secondary); font-size: .85rem; margin: 12px 0; }
 
 /* Buttons */
 .btn {
@@ -272,6 +273,8 @@ tbody tr:hover { background: #f8fafc; }
     <p>Drag &amp; drop a CSV file here</p>
     <button class="btn" onclick="document.getElementById('fileInput').click()">Choose File</button>
     <input type="file" id="fileInput" accept=".csv,.tsv,.txt" class="hidden">
+    <div class="drop-zone-divider">or</div>
+    <button class="btn btn-outline" onclick="loadSampleData()">Load Sample Data</button>
   </div>
 
   <!-- Dashboard (hidden until file loads) -->
@@ -378,6 +381,57 @@ dropZone.addEventListener('drop', e => {
   if (file) loadFile(file);
 });
 fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+
+const SAMPLE_CSV = `week_start,week_end,sessions,users,add_to_carts,ventas,city
+2025-06-01,2025-06-07,46462,31433,2538,779,Madrid
+2025-06-08,2025-06-14,46625,30308,2615,732,Barcelona
+2025-06-15,2025-06-21,46539,31754,2595,805,Valencia
+2025-06-22,2025-06-28,48723,33239,2561,724,Sevilla
+2025-06-29,2025-07-05,42845,28759,2271,666,Zaragoza
+2025-07-06,2025-07-12,42351,28690,2448,666,Málaga
+2025-07-13,2025-07-19,42015,28444,2345,657,Murcia
+2025-07-20,2025-07-26,42232,28599,2525,711,Palma
+2025-07-27,2025-08-02,40692,28450,2180,680,Bilbao
+2025-08-03,2025-08-09,37707,25374,2032,601,Alicante
+2025-08-10,2025-08-16,38797,26832,2244,594,Madrid
+2025-08-17,2025-08-23,37752,25221,1966,544,Barcelona
+2025-08-24,2025-08-30,40064,26725,2327,640,Valencia
+2025-08-31,2025-09-06,46039,32379,2580,716,Sevilla
+2025-09-07,2025-09-13,45711,30977,2686,771,Zaragoza
+2025-09-14,2025-09-20,44663,29979,2292,719,Málaga
+2025-09-21,2025-09-27,45604,30647,2626,734,Murcia
+2025-09-28,2025-10-04,49809,34055,2873,852,Palma
+2025-10-05,2025-10-11,49717,33919,2805,870,Bilbao
+2025-10-12,2025-10-18,49854,34232,2924,829,Alicante
+2025-10-19,2025-10-25,50057,33290,2964,792,Madrid
+2025-10-26,2025-11-01,53699,36362,3006,867,Barcelona
+2025-11-02,2025-11-08,58274,39223,3998,1090,Valencia
+2025-11-09,2025-11-15,58466,40703,3696,1256,Sevilla
+2025-11-16,2025-11-22,59508,41275,3996,1164,Zaragoza
+2025-11-23,2025-11-29,101197,70473,7646,3279,Málaga
+2025-11-30,2025-12-06,71207,49297,5117,1670,Murcia
+2025-12-07,2025-12-13,71705,50023,5235,1614,Palma
+2025-12-14,2025-12-20,67662,46007,4853,1441,Bilbao
+2025-12-21,2025-12-27,92513,65428,5852,2073,Alicante
+2025-12-28,2025-12-31,70543,46217,4645,1485,Madrid`;
+
+function loadSampleData() {
+  const results = Papa.parse(SAMPLE_CSV, { skipEmptyLines: true });
+  const data = results.data;
+  state.headers = data[0].map(h => h.trim());
+  state.rows = data.slice(1);
+  state.colFilters = state.headers.map(() => '');
+  state.sortCol = -1;
+  state.page = 0;
+
+  document.getElementById('fileInfo').textContent = `sample-data.csv  —  ${state.rows.length} rows × ${state.headers.length} cols`;
+  dropZone.classList.add('hidden');
+  document.getElementById('dashboard').classList.remove('hidden');
+
+  buildSummary();
+  applyFilters();
+  buildChartControls();
+}
 
 function loadFile(file) {
   Papa.parse(file, {
