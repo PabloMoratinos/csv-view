@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSV Viewer</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --text: #1a202c;
+  --text-secondary: #64748b;
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --accent: #10b981;
+  --danger: #ef4444;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,.1);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* Header */
+.header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: var(--shadow);
+}
+.header h1 { font-size: 1.25rem; font-weight: 700; }
+.header .file-info { font-size: .85rem; color: var(--text-secondary); }
+
+/* Container */
+.container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+/* Drop Zone */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 48px 24px;
+  text-align: center;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  margin-bottom: 24px;
+}
+.drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
+.drop-zone p { color: var(--text-secondary); margin-bottom: 12px; font-size: 1rem; }
+.drop-zone .btn { display: inline-block; }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: .875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s;
+  background: var(--primary);
+  color: #fff;
+}
+.btn:hover { background: var(--primary-hover); }
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.btn-outline:hover { background: var(--bg); }
+.btn-sm { padding: 4px 10px; font-size: .8rem; }
+
+/* Sections */
+.section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
+}
+.section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Stats Grid */
+.stats-overview {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.stat-chip {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  font-size: .85rem;
+}
+.stat-chip .label { color: var(--text-secondary); font-size: .75rem; text-transform: uppercase; letter-spacing: .5px; }
+.stat-chip .value { font-size: 1.25rem; font-weight: 700; }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.stat-card {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.stat-card .col-name { font-weight: 600; font-size: .9rem; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-card .col-type { font-size: .7rem; text-transform: uppercase; letter-spacing: .5px; padding: 2px 8px; border-radius: 99px; display: inline-block; margin-bottom: 8px; }
+.stat-card .col-type.numeric { background: #dbeafe; color: #1d4ed8; }
+.stat-card .col-type.text { background: #fef3c7; color: #92400e; }
+.stat-card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: .8rem; }
+.stat-card dt { color: var(--text-secondary); }
+.stat-card dd { font-weight: 500; text-align: right; }
+
+/* Table */
+.table-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.table-controls input[type="text"] {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: .85rem;
+  width: 240px;
+}
+.table-controls select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: .85rem;
+  background: var(--surface);
+}
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+thead th {
+  background: var(--bg);
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  position: relative;
+}
+thead th:hover { background: #e2e8f0; }
+thead th .sort-indicator { margin-left: 4px; color: var(--text-secondary); font-size: .7rem; }
+thead th .sort-indicator.active { color: var(--primary); }
+.col-filter-row th { padding: 4px 6px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.col-filter-wrap { display: flex; gap: 3px; }
+.col-filter-wrap input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: .78rem;
+}
+.col-filter-wrap .filter-btn {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+  font-size: .75rem;
+  color: var(--text-secondary);
+  transition: background .15s, color .15s;
+}
+.col-filter-wrap .filter-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+tbody tr:hover { background: #f8fafc; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: .85rem;
+  color: var(--text-secondary);
+}
+.pagination .pages { display: flex; gap: 4px; }
+
+/* Chart */
+.chart-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.chart-controls label { font-size: .85rem; color: var(--text-secondary); }
+.chart-controls select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: .85rem;
+  background: var(--surface);
+}
+.chart-container { position: relative; width: 100%; max-height: 450px; }
+
+/* Export bar */
+.export-bar { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* Hidden */
+.hidden { display: none !important; }
+
+/* Responsive */
+@media (max-width: 640px) {
+  .container { padding: 12px; }
+  .stats-grid { grid-template-columns: 1fr; }
+  .table-controls input[type="text"] { width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>CSV Viewer</h1>
+  <span class="file-info" id="fileInfo"></span>
+</div>
+
+<div class="container">
+  <!-- Drop Zone -->
+  <div class="drop-zone" id="dropZone">
+    <p>Drag &amp; drop a CSV file here</p>
+    <button class="btn" onclick="document.getElementById('fileInput').click()">Choose File</button>
+    <input type="file" id="fileInput" accept=".csv,.tsv,.txt" class="hidden">
+  </div>
+
+  <!-- Dashboard (hidden until file loads) -->
+  <div id="dashboard" class="hidden">
+
+    <!-- Summary -->
+    <div class="section" id="summarySection">
+      <div class="section-title">Data Summary</div>
+      <div class="stats-overview" id="statsOverview"></div>
+      <div class="stats-grid" id="statsGrid"></div>
+    </div>
+
+    <!-- Table -->
+    <div class="section">
+      <div class="section-title">
+        <span>Data Table</span>
+        <div class="export-bar">
+          <button class="btn btn-outline btn-sm" onclick="exportCSV()">Export Filtered CSV</button>
+        </div>
+      </div>
+      <div class="table-controls">
+        <input type="text" id="globalSearch" placeholder="Search all columns...">
+        <select id="pageSize">
+          <option value="10">10 rows</option>
+          <option value="25" selected>25 rows</option>
+          <option value="50">50 rows</option>
+          <option value="100">100 rows</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table id="dataTable"><thead></thead><tbody></tbody></table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+
+    <!-- Chart -->
+    <div class="section">
+      <div class="section-title">
+        <span>Chart</span>
+        <button class="btn btn-outline btn-sm" onclick="exportChart()">Export Chart PNG</button>
+      </div>
+      <div class="chart-controls">
+        <label>Type
+          <select id="chartType">
+            <option value="bar">Bar</option>
+            <option value="line">Line</option>
+            <option value="pie">Pie</option>
+            <option value="scatter">Scatter</option>
+          </select>
+        </label>
+        <label>X Axis
+          <select id="chartX"></select>
+        </label>
+        <label>Y Axis
+          <select id="chartY"></select>
+        </label>
+        <label id="chartY2Label" class="hidden">Y2
+          <select id="chartY2"><option value="">— None —</option></select>
+        </label>
+        <label id="chartY3Label" class="hidden">Y3
+          <select id="chartY3"><option value="">— None —</option></select>
+        </label>
+        <button class="btn btn-sm" onclick="renderChart()">Draw</button>
+      </div>
+      <div class="chart-container">
+        <canvas id="chartCanvas"></canvas>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─── State ───
+const state = {
+  headers: [],
+  rows: [],        // all parsed rows (array of arrays)
+  filtered: [],    // after search/filter
+  sortCol: -1,
+  sortAsc: true,
+  page: 0,
+  colFilters: [],
+  chart: null
+};
+
+// ─── CSV Loading ───
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) loadFile(file);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+
+function loadFile(file) {
+  Papa.parse(file, {
+    skipEmptyLines: true,
+    complete(results) {
+      const data = results.data;
+      if (data.length < 2) return alert('CSV file is empty or has no data rows.');
+      state.headers = data[0].map(h => h.trim());
+      state.rows = data.slice(1);
+      state.colFilters = state.headers.map(() => '');
+      state.sortCol = -1;
+      state.page = 0;
+
+      document.getElementById('fileInfo').textContent = `${file.name}  —  ${state.rows.length} rows × ${state.headers.length} cols`;
+      dropZone.classList.add('hidden');
+      document.getElementById('dashboard').classList.remove('hidden');
+
+      buildSummary();
+      applyFilters();
+      buildChartControls();
+    }
+  });
+}
+
+// ─── Summary & Stats ───
+function buildSummary() {
+  const { headers, rows } = state;
+  const numCols = headers.length;
+  const numRows = rows.length;
+
+  // Overview chips
+  document.getElementById('statsOverview').innerHTML =
+    `<div class="stat-chip"><div class="label">Rows</div><div class="value">${numRows.toLocaleString()}</div></div>` +
+    `<div class="stat-chip"><div class="label">Columns</div><div class="value">${numCols}</div></div>`;
+
+  // Per-column stats
+  const grid = document.getElementById('statsGrid');
+  grid.innerHTML = '';
+
+  for (let c = 0; c < numCols; c++) {
+    const vals = rows.map(r => r[c] ?? '');
+    const nullCount = vals.filter(v => v === '' || v == null).length;
+    const nonNull = vals.filter(v => v !== '' && v != null);
+    const unique = new Set(nonNull).size;
+
+    // Try numeric
+    const nums = nonNull.map(Number).filter(n => !isNaN(n));
+    const isNumeric = nums.length > nonNull.length * 0.5 && nums.length > 0;
+
+    let statsHTML = '';
+    if (isNumeric) {
+      nums.sort((a, b) => a - b);
+      const min = nums[0];
+      const max = nums[nums.length - 1];
+      const mean = nums.reduce((s, n) => s + n, 0) / nums.length;
+      const mid = Math.floor(nums.length / 2);
+      const median = nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+      statsHTML =
+        `<dt>Min</dt><dd>${fmt(min)}</dd>` +
+        `<dt>Max</dt><dd>${fmt(max)}</dd>` +
+        `<dt>Mean</dt><dd>${fmt(mean)}</dd>` +
+        `<dt>Median</dt><dd>${fmt(median)}</dd>`;
+    }
+    statsHTML +=
+      `<dt>Unique</dt><dd>${unique.toLocaleString()}</dd>` +
+      `<dt>Nulls</dt><dd>${nullCount}</dd>`;
+
+    const card = document.createElement('div');
+    card.className = 'stat-card';
+    card.innerHTML =
+      `<div class="col-name" title="${esc(headers[c])}">${esc(headers[c])}</div>` +
+      `<span class="col-type ${isNumeric ? 'numeric' : 'text'}">${isNumeric ? 'Numeric' : 'Text'}</span>` +
+      `<dl>${statsHTML}</dl>`;
+    grid.appendChild(card);
+  }
+}
+
+function fmt(n) {
+  return Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+// ─── Table ───
+function applyFilters() {
+  const q = document.getElementById('globalSearch').value.toLowerCase();
+  state.filtered = state.rows.filter(row => {
+    if (q && !row.some(cell => String(cell).toLowerCase().includes(q))) return false;
+    for (let c = 0; c < state.colFilters.length; c++) {
+      const f = state.colFilters[c];
+      if (f && !String(row[c] ?? '').toLowerCase().includes(f)) return false;
+    }
+    return true;
+  });
+  if (state.sortCol >= 0) sortData();
+  state.page = 0;
+  renderTable();
+}
+
+function sortData() {
+  const col = state.sortCol;
+  const asc = state.sortAsc;
+  state.filtered.sort((a, b) => {
+    let va = a[col] ?? '', vb = b[col] ?? '';
+    const na = Number(va), nb = Number(vb);
+    if (!isNaN(na) && !isNaN(nb)) return asc ? na - nb : nb - na;
+    va = String(va).toLowerCase();
+    vb = String(vb).toLowerCase();
+    return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
+}
+
+function renderTable() {
+  const { headers, filtered, page } = state;
+  const pageSize = parseInt(document.getElementById('pageSize').value);
+  const start = page * pageSize;
+  const pageRows = filtered.slice(start, start + pageSize);
+
+  // Head
+  const thead = document.querySelector('#dataTable thead');
+  thead.innerHTML = '';
+
+  const headerRow = document.createElement('tr');
+  headers.forEach((h, i) => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    const ind = document.createElement('span');
+    ind.className = 'sort-indicator' + (state.sortCol === i ? ' active' : '');
+    ind.textContent = state.sortCol === i ? (state.sortAsc ? ' ▲' : ' ▼') : ' ⇅';
+    th.appendChild(ind);
+    th.addEventListener('click', () => {
+      if (state.sortCol === i) state.sortAsc = !state.sortAsc;
+      else { state.sortCol = i; state.sortAsc = true; }
+      sortData();
+      state.page = 0;
+      renderTable();
+    });
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+
+  // Column filters
+  const filterRow = document.createElement('tr');
+  filterRow.className = 'col-filter-row';
+  headers.forEach((_, i) => {
+    const th = document.createElement('th');
+    const wrap = document.createElement('div');
+    wrap.className = 'col-filter-wrap';
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = 'Filter…';
+    inp.value = state.colFilters[i];
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn';
+    btn.textContent = '✓';
+    btn.title = 'Apply filter';
+    const apply = () => { state.colFilters[i] = inp.value.toLowerCase(); applyFilters(); };
+    btn.addEventListener('click', apply);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
+    wrap.appendChild(inp);
+    wrap.appendChild(btn);
+    th.appendChild(wrap);
+    filterRow.appendChild(th);
+  });
+  thead.appendChild(filterRow);
+
+  // Body
+  const tbody = document.querySelector('#dataTable tbody');
+  tbody.innerHTML = '';
+  pageRows.forEach(row => {
+    const tr = document.createElement('tr');
+    headers.forEach((_, i) => {
+      const td = document.createElement('td');
+      td.textContent = row[i] ?? '';
+      td.title = row[i] ?? '';
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pag = document.getElementById('pagination');
+  pag.innerHTML = `<span>Showing ${filtered.length === 0 ? 0 : start + 1}–${Math.min(start + pageSize, filtered.length)} of ${filtered.length.toLocaleString()}</span>`;
+  const pages = document.createElement('div');
+  pages.className = 'pages';
+  const addBtn = (label, p, disabled) => {
+    const b = document.createElement('button');
+    b.className = 'btn btn-outline btn-sm';
+    b.textContent = label;
+    b.disabled = disabled;
+    b.addEventListener('click', () => { state.page = p; renderTable(); });
+    pages.appendChild(b);
+  };
+  addBtn('← Prev', page - 1, page === 0);
+  addBtn('Next →', page + 1, page >= totalPages - 1);
+  pag.appendChild(pages);
+}
+
+document.getElementById('globalSearch').addEventListener('input', applyFilters);
+document.getElementById('pageSize').addEventListener('change', () => { state.page = 0; renderTable(); });
+
+// ─── Chart ───
+function buildChartControls() {
+  const { headers, rows } = state;
+  const xSel = document.getElementById('chartX');
+  const ySelectors = ['chartY', 'chartY2', 'chartY3'].map(id => document.getElementById(id));
+  xSel.innerHTML = '';
+  ySelectors.forEach(sel => { sel.innerHTML = ''; });
+
+  // Y2 and Y3 get a "None" option
+  ySelectors.slice(1).forEach(sel => sel.appendChild(new Option('— None —', '')));
+
+  // Detect numeric columns
+  const numericCols = [];
+  headers.forEach((h, i) => {
+    const sample = rows.slice(0, 100).map(r => r[i]).filter(v => v !== '' && v != null);
+    const nums = sample.map(Number).filter(n => !isNaN(n));
+    if (nums.length > sample.length * 0.5) numericCols.push(i);
+  });
+
+  headers.forEach((h, i) => {
+    xSel.appendChild(new Option(h, i));
+    ySelectors.forEach(sel => sel.appendChild(new Option(h, i)));
+  });
+
+  // Default: first col for X, first numeric for Y
+  if (numericCols.length > 0) {
+    xSel.value = numericCols[0] === 0 && headers.length > 1 ? 1 : 0;
+    ySelectors[0].value = numericCols[0];
+  }
+  ySelectors[1].value = '';
+  ySelectors[2].value = '';
+
+  toggleExtraYAxes();
+}
+
+function toggleExtraYAxes() {
+  const type = document.getElementById('chartType').value;
+  const show = type === 'bar' || type === 'line';
+  document.getElementById('chartY2Label').classList.toggle('hidden', !show);
+  document.getElementById('chartY3Label').classList.toggle('hidden', !show);
+}
+
+document.getElementById('chartType').addEventListener('change', toggleExtraYAxes);
+
+function renderChart() {
+  const type = document.getElementById('chartType').value;
+  const xIdx = parseInt(document.getElementById('chartX').value);
+  const { headers, filtered } = state;
+
+  // Collect Y indices (up to 3 for bar/line, 1 for pie/scatter)
+  const yIndices = [parseInt(document.getElementById('chartY').value)];
+  if (type === 'bar' || type === 'line') {
+    const y2 = document.getElementById('chartY2').value;
+    const y3 = document.getElementById('chartY3').value;
+    if (y2 !== '') yIndices.push(parseInt(y2));
+    if (y3 !== '') yIndices.push(parseInt(y3));
+  }
+
+  if (state.chart) { state.chart.destroy(); state.chart = null; }
+
+  const maxPoints = 500;
+  const source = filtered.length > maxPoints ? filtered.slice(0, maxPoints) : filtered;
+
+  let labels = source.map(r => r[xIdx] ?? '');
+
+  // Scatter: single dataset with x/y points
+  if (type === 'scatter') {
+    const yIdx = yIndices[0];
+    const datasets = [{ label: `${headers[xIdx]} vs ${headers[yIdx]}`, data: source.map(r => ({ x: Number(r[xIdx]) || 0, y: Number(r[yIdx]) || 0 })), backgroundColor: 'rgba(59,130,246,.5)', pointRadius: 3 }];
+    state.chart = new Chart(document.getElementById('chartCanvas'), {
+      type,
+      data: { datasets },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false }, title: { display: true, text: `${headers[xIdx]} vs ${headers[yIdx]}` } },
+        scales: { x: { title: { display: true, text: headers[xIdx] } }, y: { title: { display: true, text: headers[yIdx] }, beginAtZero: true } }
+      }
+    });
+    return;
+  }
+
+  // Pie: single Y, aggregate
+  if (type === 'pie') {
+    const yIdx = yIndices[0];
+    let yVals = source.map(r => { const n = Number(r[yIdx]); return isNaN(n) ? 0 : n; });
+    const agg = {};
+    labels.forEach((l, i) => { agg[l] = (agg[l] || 0) + yVals[i]; });
+    labels = Object.keys(agg);
+    yVals = Object.values(agg);
+    if (labels.length > 20) {
+      const sorted = labels.map((l, i) => [l, yVals[i]]).sort((a, b) => b[1] - a[1]);
+      const top = sorted.slice(0, 19);
+      const otherVal = sorted.slice(19).reduce((s, x) => s + x[1], 0);
+      labels = top.map(x => x[0]).concat('Other');
+      yVals = top.map(x => x[1]).concat(otherVal);
+    }
+    const colors = generateColors(labels.length);
+    state.chart = new Chart(document.getElementById('chartCanvas'), {
+      type,
+      data: { labels, datasets: [{ label: headers[yIdx], data: yVals, backgroundColor: colors }] },
+      options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: true }, title: { display: true, text: `${headers[xIdx]} — ${headers[yIdx]}` } }
+      }
+    });
+    return;
+  }
+
+  // Bar / Line: multiple Y series
+  const dsColors = ['rgba(59,130,246,.6)', 'rgba(16,185,129,.6)', 'rgba(245,158,11,.6)'];
+  const borderColors = ['rgb(59,130,246)', 'rgb(16,185,129)', 'rgb(245,158,11)'];
+
+  // Check if labels should be aggregated (bar with many duplicates)
+  const shouldAggregate = type === 'bar' && new Set(labels).size < labels.length * 0.7;
+
+  let finalLabels = labels;
+  const datasets = yIndices.map((yIdx, si) => {
+    let yVals = source.map(r => { const n = Number(r[yIdx]); return isNaN(n) ? 0 : n; });
+    if (shouldAggregate) {
+      const agg = {};
+      labels.forEach((l, i) => { agg[l] = (agg[l] || 0) + yVals[i]; });
+      if (si === 0) finalLabels = Object.keys(agg);
+      yVals = Object.values(agg);
+    }
+    return {
+      label: headers[yIdx],
+      data: yVals,
+      backgroundColor: dsColors[si],
+      borderColor: borderColors[si],
+      borderWidth: type === 'line' ? 2 : 1,
+      fill: false
+    };
+  });
+
+  const yNames = yIndices.map(i => headers[i]).join(', ');
+  state.chart = new Chart(document.getElementById('chartCanvas'), {
+    type,
+    data: { labels: finalLabels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: {
+        legend: { display: yIndices.length > 1 },
+        title: { display: true, text: `${headers[xIdx]} vs ${yNames}` }
+      },
+      scales: {
+        x: { title: { display: true, text: headers[xIdx] }, ticks: { maxTicksLimit: 30 } },
+        y: { beginAtZero: true }
+      }
+    }
+  });
+}
+
+function generateColors(n) {
+  const palette = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#6366f1','#14b8a6','#e11d48','#a855f7','#0ea5e9','#eab308','#64748b','#dc2626','#059669','#7c3aed','#d946ef'];
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(palette[i % palette.length]);
+  return out;
+}
+
+// ─── Export ───
+function exportCSV() {
+  const { headers, filtered } = state;
+  const lines = [headers.join(',')];
+  filtered.forEach(row => {
+    lines.push(row.map(cell => {
+      const s = String(cell ?? '');
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(','));
+  });
+  download(lines.join('\n'), 'filtered_data.csv', 'text/csv');
+}
+
+function exportChart() {
+  if (!state.chart) return alert('Draw a chart first.');
+  const url = state.chart.canvas.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'chart.png';
+  a.click();
+}
+
+function download(content, name, type) {
+  const blob = new Blob([content], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+</script>
+</body>
+</html>
