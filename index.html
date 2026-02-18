@@ -345,6 +345,17 @@ tbody tr:hover { background: #f8fafc; }
         <label id="chartY3Label" class="hidden">Y3
           <select id="chartY3"><option value="">— None —</option></select>
         </label>
+        <label id="chartSizeLabel" class="hidden">Size
+          <select id="chartSize"><option value="">— None —</option></select>
+        </label>
+        <label id="chartMaxPointsLabel" class="hidden">Max points
+          <select id="chartMaxPoints">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+          </select>
+        </label>
         <button class="btn btn-sm" onclick="renderChart()">Draw</button>
       </div>
       <div class="chart-container">
@@ -737,11 +748,14 @@ function buildChartControls() {
   const { headers, rows } = state;
   const xSel = document.getElementById('chartX');
   const ySelectors = ['chartY', 'chartY2', 'chartY3'].map(id => document.getElementById(id));
+  const sizeSel = document.getElementById('chartSize');
   xSel.innerHTML = '';
   ySelectors.forEach(sel => { sel.innerHTML = ''; });
+  sizeSel.innerHTML = '';
 
-  // Y2 and Y3 get a "None" option
+  // Y2, Y3 and Size get a "None" option
   ySelectors.slice(1).forEach(sel => sel.appendChild(new Option('— None —', '')));
+  sizeSel.appendChild(new Option('— None —', ''));
 
   // Detect numeric columns
   const numericCols = [];
@@ -754,6 +768,7 @@ function buildChartControls() {
   headers.forEach((h, i) => {
     xSel.appendChild(new Option(h, i));
     ySelectors.forEach(sel => sel.appendChild(new Option(h, i)));
+    sizeSel.appendChild(new Option(h, i));
   });
 
   // Default: first col for X, first numeric for Y
@@ -769,9 +784,11 @@ function buildChartControls() {
 
 function toggleExtraYAxes() {
   const type = document.getElementById('chartType').value;
-  const show = type === 'bar' || type === 'line';
-  document.getElementById('chartY2Label').classList.toggle('hidden', !show);
-  document.getElementById('chartY3Label').classList.toggle('hidden', !show);
+  const showMultiY = type === 'bar' || type === 'line';
+  document.getElementById('chartY2Label').classList.toggle('hidden', !showMultiY);
+  document.getElementById('chartY3Label').classList.toggle('hidden', !showMultiY);
+  document.getElementById('chartSizeLabel').classList.toggle('hidden', type !== 'scatter');
+  document.getElementById('chartMaxPointsLabel').classList.toggle('hidden', type !== 'scatter');
 }
 
 document.getElementById('chartType').addEventListener('change', toggleExtraYAxes);
@@ -797,17 +814,81 @@ function renderChart() {
 
   let labels = source.map(r => r[xIdx] ?? '');
 
-  // Scatter: single dataset with x/y points
+  // Scatter / Bubble — aggregate Y (sum) by unique X value
   if (type === 'scatter') {
+    const scatterMax = parseInt(document.getElementById('chartMaxPoints').value);
     const yIdx = yIndices[0];
-    const datasets = [{ label: `${headers[xIdx]} vs ${headers[yIdx]}`, data: source.map(r => ({ x: Number(r[xIdx]) || 0, y: Number(r[yIdx]) || 0 })), backgroundColor: 'rgba(59,130,246,.5)', pointRadius: 3 }];
+    const sizeVal = document.getElementById('chartSize').value;
+    const sizeIdx = sizeVal !== '' ? parseInt(sizeVal) : -1;
+    const isBubble = sizeIdx >= 0;
+
+    // Aggregate: sum Y (and Size) per unique X value
+    const aggMap = {};
+    const xOrder = [];
+    source.forEach(r => {
+      const xKey = String(r[xIdx] ?? '');
+      if (!(xKey in aggMap)) { aggMap[xKey] = { y: 0, size: 0 }; xOrder.push(xKey); }
+      aggMap[xKey].y += Number(r[yIdx]) || 0;
+      if (isBubble) aggMap[xKey].size += Number(r[sizeIdx]) || 0;
+    });
+
+    // Limit to max points
+    const xKeys = xOrder.slice(0, scatterMax);
+    const titleText = `${headers[xIdx]} vs ${headers[yIdx]} (sum)` + (isBubble ? ` (size: ${headers[sizeIdx]})` : '');
+
+    let data;
+    if (isBubble) {
+      const sizeMax = Math.max(...xKeys.map(k => aggMap[k].size)) || 1;
+      data = xKeys.map((k, i) => ({ x: i, y: aggMap[k].y, r: Math.max(2, (aggMap[k].size / sizeMax) * 25) }));
+    } else {
+      data = xKeys.map((k, i) => ({ x: i, y: aggMap[k].y }));
+    }
+
+    const datasets = [{
+      label: titleText,
+      data,
+      backgroundColor: isBubble ? 'rgba(59,130,246,.4)' : 'rgba(59,130,246,.5)',
+      borderColor: 'rgb(59,130,246)',
+      borderWidth: isBubble ? 1 : 0,
+      pointRadius: isBubble ? undefined : 5
+    }];
+
     state.chart = new Chart(document.getElementById('chartCanvas'), {
-      type,
+      type: isBubble ? 'bubble' : 'scatter',
       data: { datasets },
       options: {
         responsive: true, maintainAspectRatio: true,
-        plugins: { legend: { display: false }, title: { display: true, text: `${headers[xIdx]} vs ${headers[yIdx]}` } },
-        scales: { x: { title: { display: true, text: headers[xIdx] } }, y: { title: { display: true, text: headers[yIdx] }, beginAtZero: true } }
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: titleText },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const xLabel = xKeys[ctx.parsed.x] ?? ctx.parsed.x;
+                let text = `${headers[xIdx]}: ${xLabel}, ${headers[yIdx]}: ${fmt(ctx.parsed.y)}`;
+                if (isBubble) text += `, ${headers[sizeIdx]}: ${fmt(aggMap[xLabel]?.size ?? 0)}`;
+                return text;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            title: { display: true, text: headers[xIdx] },
+            ticks: {
+              callback: v => { const i = Math.round(v); return i >= 0 && i < xKeys.length && Math.abs(v - i) < 0.01 ? xKeys[i] : ''; },
+              stepSize: 1,
+              autoSkip: false,
+              maxRotation: 60,
+              minRotation: 30
+            },
+            min: -0.5,
+            max: xKeys.length - 0.5,
+            afterBuildTicks: axis => { axis.ticks = xKeys.map((_, i) => ({ value: i })); }
+          },
+          y: { title: { display: true, text: `${headers[yIdx]} (sum)` }, beginAtZero: true }
+        }
       }
     });
     return;
